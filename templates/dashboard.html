@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EnergyMon Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <style>
+        :root {
+            --bs-body-bg: #f8f9fe;
+            --bs-body-font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            --bs-primary-rgb: 13, 110, 253;
+            --bs-success-rgb: 25, 135, 84;
+            --bs-light-rgb: 248, 249, 250;
+            --bs-border-color: #dee2e6;
+        }
+        .top-bar { background-color: white; border-bottom: 1px solid var(--bs-border-color); }
+        .card { border: 1px solid var(--bs-border-color); box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075); }
+        .status-pill { display: inline-flex; align-items: center; padding: .25em .6em; font-size: .8em; font-weight: 600; border-radius: 50rem; }
+        .status-pill.on { background-color: rgba(var(--bs-success-rgb), 0.1); color: rgb(var(--bs-success-rgb)); }
+        .status-pill.off { background-color: rgba(var(--bs-danger-rgb), 0.1); color: rgb(var(--bs-danger-rgb)); }
+        .status-pill::before { content: ''; display: inline-block; width: .6em; height: .6em; margin-right: .5em; border-radius: 50%; }
+        .status-pill.on::before { background-color: rgb(var(--bs-success-rgb)); }
+        .status-pill.off::before { background-color: rgb(var(--bs-danger-rgb)); }
+        .metric-card { padding: 1.25rem; border-radius: .75rem; color: white; position: relative; }
+        .metric-card .value { font-size: 2.25rem; font-weight: 600; }
+        .metric-card .icon { font-size: 3.5rem; position: absolute; top: 50%; right: 1rem; transform: translateY(-50%); opacity: 0.2; }
+        .metric-watts { background: linear-gradient(45deg, #0d6efd, #0dcaf0); }
+        .metric-volts { background: linear-gradient(45deg, #198754, #20c997); }
+        .metric-amps { background: linear-gradient(45deg, #fd7e14, #ffc107); }
+    </style>
+</head>
+<body>
+    <header class="top-bar p-3 mb-4">
+        <!-- ... Header code is unchanged ... -->
+        <div class="container-fluid d-flex justify-content-between align-items-center">
+            <a href="/" class="d-flex align-items-center text-dark text-decoration-none">
+                <i class="bi bi-lightning-charge-fill fs-4 me-2 text-primary"></i>
+                <span class="fs-5 fw-bold">EnergyMon Dashboard</span>
+            </a>
+            <div class="d-flex align-items-center text-muted small">
+                <span id="header-status-text"><i class="bi bi-arrow-repeat"></i> Connecting...</span>
+                <span class="mx-2">|</span>
+                <span id="header-last-update">Last Update: --:--:--</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="container-fluid">
+        <!-- Row 1: Main Info (Unchanged) -->
+        <div class="row g-4 mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body d-flex justify-content-between align-items-center p-3">
+                        <div>
+                            <h5 class="card-title mb-0">Tuya Smart Plug</h5>
+                            <small class="text-muted">Device ID: {{ device_id }}</small>
+                        </div>
+                        <div id="device-main-status" class="status-pill">--</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Row 2: Real-time and Controls -->
+        <div class="row g-4 mb-4">
+            <div class="col-lg-8">
+                <div class="card h-100">
+                    <div class="card-header">Real-time Monitoring</div>
+                    <div class="card-body">
+                        <!-- Metric Cards (Unchanged) -->
+                        <div class="row g-3">
+                            <div class="col-md-4"><div class="metric-card metric-watts"><i class="bi bi-speedometer2 icon"></i><div class="value"><span id="metric-power">0.0</span> W</div><span>Power</span></div></div>
+                            <div class="col-md-4"><div class="metric-card metric-volts"><i class="bi bi-activity icon"></i><div class="value"><span id="metric-voltage">0.0</span> V</div><span>Voltage</span></div></div>
+                            <div class="col-md-4"><div class="metric-card metric-amps"><i class="bi bi-lightning icon"></i><div class="value"><span id="metric-current">0.00</span> A</div><span>Current</span></div></div>
+                        </div>
+
+                        <!-- NEW: Real-time Watt Graph -->
+                        <div class="mt-4" style="height: 200px;">
+                            <canvas id="realtimeChart"></canvas>
+                        </div>
+                        
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-4">
+                <!-- Device Control Card (Unchanged) -->
+                 <div class="card h-100">
+                    <div class="card-header">Device Control</div>
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-grid gap-2 mb-3">
+                            <button class="btn btn-success btn-lg" onclick="toggleDevice(true)"><i class="bi bi-power"></i> Turn ON</button>
+                            <button class="btn btn-outline-danger btn-lg" onclick="toggleDevice(false)"><i class="bi bi-power"></i> Turn OFF</button>
+                        </div>
+                        <hr>
+                        <div><strong>Current Status:</strong> <span id="control-status" class="status-pill">--</span></div>
+                        <div class="mt-auto"><hr><div class="d-flex justify-content-between"><span>Daily Runtime</span><strong id="summary-runtime">0h 0m</strong></div><div class="d-flex justify-content-between"><span>Today's Energy</span><strong id="summary-energy">0.00 kWh</strong></div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Other Rows (History, System Info) are unchanged -->
+        <!-- Row 3: History -->
+        <div class="row g-4 mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">Historical Energy Consumption</div>
+                    <div class="card-body">
+                        <div class="d-flex justify-content-end align-items-center gap-2 mb-3">
+                            <label for="history-date">Select Date:</label>
+                            <input type="date" id="history-date" class="form-control" style="width: auto;">
+                            <button class="btn btn-primary" onclick="viewHistory()"><i class="bi bi-search"></i> View History</button>
+                        </div>
+                        <div style="height: 300px; position: relative;">
+                            <canvas id="historyChart"></canvas>
+                             <div id="history-placeholder" class="d-flex align-items-center justify-content-center h-100 text-muted">Select a date and click 'View History' to see the chart</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Row 4: System Info -->
+        <div class="row g-4">
+            <div class="col-md-6">
+                <div class="card h-100"><div class="card-header">Device Information</div><ul class="list-group list-group-flush"><li class="list-group-item d-flex justify-content-between"><span>Model</span> <strong>Tuya 20A Smart Plug</strong></li><li class="list-group-item d-flex justify-content-between"><span>Connection</span> <strong>Local Network</strong></li><li class="list-group-item d-flex justify-content-between"><span>Firmware</span> <strong>v1.2.3</strong></li></ul></div>
+            </div>
+            <div class="col-md-6">
+                 <div class="card h-100"><div class="card-header">System Status</div><ul class="list-group list-group-flush"><li class="list-group-item d-flex justify-content-between align-items-center"><span>API Connection</span> <span class="status-pill on">Connected</span></li><li class="list-group-item d-flex justify-content-between align-items-center"><span>Database</span> <span class="status-pill on">Online</span></li><li class="list-group-item d-flex justify-content-between align-items-center"><span>Data Logging</span> <span class="status-pill on">Active</span></li><li class="list-group-item d-flex justify-content-between align-items-center"><span>Server Uptime</span> <strong id="system-uptime">--</strong></li></ul></div>
+            </div>
+        </div>
+    </main>
+    
+    <footer class="text-center text-muted small py-4">EnergyMon Dashboard</footer>
+
+    <script>
+        const API_PREFIX = '';
+        let historyChart;
+        let realtimeChart; // NEW: Variable for the real-time chart
+
+        // --- Helper Functions (Unchanged) ---
+        const getElement = id => document.getElementById(id);
+        function formatTime(date) { return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }); }
+        function formatUptime(totalSeconds) { const d = Math.floor(totalSeconds / 86400); totalSeconds %= 86400; const h = Math.floor(totalSeconds / 3600); totalSeconds %= 3600; const m = Math.floor(totalSeconds / 60); let p = []; if (d > 0) p.push(`${d}d`); if (h > 0) p.push(`${h}h`); if (m > 0 || (d === 0 && h === 0)) p.push(`${m}m`); return p.join(' '); }
+        function setStatusPill(element, isOn) { if (isOn) { element.className = 'status-pill on'; element.textContent = 'ON'; } else { element.className = 'status-pill off'; element.textContent = 'OFF'; } }
+        
+        // --- API Functions (Unchanged, except one line in updateLiveMetrics) ---
+        async function toggleDevice(isOn) { try { const r = await fetch(`${API_PREFIX}/switch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: isOn }) }); const d = await r.json(); if (d.success) { setTimeout(updateLiveMetrics, 1000); } else { alert('Failed to toggle device.'); console.error('Toggle failed:', d.error); } } catch (err) { alert('Error communicating with server.'); console.error(err); } }
+        async function updateLiveMetrics() {
+            try {
+                const response = await fetch(`${API_PREFIX}/api/live`);
+                if (!response.ok) throw new Error(`Server responded with ${response.status}`);
+                const data = await response.json();
+                
+                getElement('metric-power').textContent = data.power.toFixed(1);
+                getElement('metric-voltage').textContent = data.voltage.toFixed(1);
+                getElement('metric-current').textContent = data.current.toFixed(2);
+                setStatusPill(getElement('device-main-status'), data.switch);
+                setStatusPill(getElement('control-status'), data.switch);
+                getElement('header-status-text').innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Connected';
+                getElement('header-last-update').textContent = `Last Update: ${formatTime(new Date())}`;
+
+                // NEW: Update the real-time chart with the latest power data
+                updateRealtimeChart(new Date(), data.power);
+
+            } catch (error) {
+                console.error("Failed to fetch live data:", error);
+                getElement('header-status-text').innerHTML = '<i class="bi bi-exclamation-triangle-fill text-danger"></i> Connection Lost';
+            }
+        }
+        async function updateSummaryMetrics() { try { const r = await fetch(`${API_PREFIX}/api/summary`); const d = await r.json(); getElement('summary-energy').textContent = `${d.today_energy_kwh.toFixed(2)} kWh`; getElement('summary-runtime').textContent = formatUptime(d.daily_runtime_seconds); } catch (e) { console.error("Failed to fetch summary:", e); } }
+        async function updateSystemStatus() { try { const r = await fetch(`${API_PREFIX}/api/system`); const d = await r.json(); getElement('system-uptime').textContent = formatUptime(d.uptime_seconds); } catch (e) { console.error("Failed to fetch system status:", e); } }
+        async function viewHistory() { /* ... Unchanged ... */ const dateInput=getElement('history-date');if(!dateInput.value){alert('Please select a date first.');return;}const placeholder=getElement('history-placeholder');placeholder.textContent='Loading...';try{const response=await fetch(`${API_PREFIX}/api/history?date=${dateInput.value}`);const data=await response.json();if(data.length===0){placeholder.textContent='No data available for the selected date.';}else{placeholder.style.display='none';}if(!historyChart){const ctx=getElement('historyChart').getContext('2d');historyChart=new Chart(ctx,{type:'line',data:{datasets:[{label:'Power Consumption (Watts)',data:data,borderColor:'rgba(var(--bs-primary-rgb), 1)',backgroundColor:'rgba(var(--bs-primary-rgb), 0.1)',fill:true,pointRadius:0,tension:0.1}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:{type:'time',time:{unit:'hour',tooltipFormat:'HH:mm'}},y:{beginAtZero:true,title:{display:true,text:'Watts'}}}}});}else{historyChart.data.datasets[0].data=data;historyChart.update();}}catch(error){console.error("Failed to fetch history:",error);placeholder.textContent='Error loading historical data.';}}
+
+        // --- NEW: Functions to initialize and update the real-time chart ---
+        function initRealtimeChart() {
+            const ctx = getElement('realtimeChart').getContext('2d');
+            realtimeChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Live Power (W)',
+                        data: [],
+                        borderColor: 'rgba(var(--bs-primary-rgb), 1)',
+                        backgroundColor: 'rgba(var(--bs-primary-rgb), 0.1)',
+                        fill: true,
+                        tension: 0.2,
+                        pointRadius: 1,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: { unit: 'second', displayFormats: { second: 'HH:mm:ss' } },
+                            ticks: { maxTicksLimit: 6 }
+                        },
+                        y: { beginAtZero: true }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        function updateRealtimeChart(time, value) {
+            if (!realtimeChart) return;
+            
+            realtimeChart.data.labels.push(time);
+            realtimeChart.data.datasets[0].data.push(value);
+
+            // Keep only the last 60 data points (5 minutes of data)
+            if (realtimeChart.data.labels.length > 60) {
+                realtimeChart.data.labels.shift();
+                realtimeChart.data.datasets[0].data.shift();
+            }
+
+            realtimeChart.update('quiet'); // 'quiet' prevents animation
+        }
+
+        // --- Initial Load & Intervals ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const today = new Date().toISOString().split('T')[0];
+            getElement('history-date').value = today;
+
+            initRealtimeChart(); // NEW: Initialize the new chart
+
+            updateLiveMetrics();
+            updateSummaryMetrics();
+            updateSystemStatus();
+            
+            setInterval(updateLiveMetrics, 5000);
+            setInterval(updateSummaryMetrics, 60000);
+            setInterval(updateSystemStatus, 30000);
+        });
+    </script>
+</body>
+</html>
